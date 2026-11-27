@@ -11,6 +11,14 @@ const securityHeaders = [
   ...(isProduction ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }] : []),
 ];
 
+// Next stamps prerendered HTML with `Cache-Control: s-maxage=31536000` (a year) because the page never
+// revalidates itself. That is wrong for a document: any shared cache downstream would keep serving the
+// old markup long after a redeploy, and Search Console would then read a page that no longer exists in
+// the repo. Cloudflare does not edge-cache Worker responses by default (no `cf-cache-status` / `Age` on
+// 2026-11-27), so nothing is stale today — this keeps it true once a Cache Rule or another CDN sits in
+// front. Hashed assets under /_next/static are untouched: they legitimately keep their immutable header.
+const htmlCacheHeaders = [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }];
+
 const nextConfig: NextConfig = {
   // Cache Components stays off deliberately. With it enabled the OpenNext/Workers runtime hangs
   // every page request ("The Workers runtime canceled this request because it detected that your
@@ -21,6 +29,8 @@ const nextConfig: NextConfig = {
   cacheComponents: false,
   partialPrefetching: false,
   reactCompiler: true,
+  // Hides `x-powered-by: Next.js`. Nothing depends on it; it only advertises the stack.
+  poweredByHeader: false,
   turbopack: {
     rules: {
       "*.css": {
@@ -30,7 +40,12 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Only the two document routes: a later rule with the same key wins over the earlier one.
+      { source: "/", headers: htmlCacheHeaders },
+      { source: "/about", headers: htmlCacheHeaders },
+    ];
   },
 };
 

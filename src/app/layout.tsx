@@ -73,6 +73,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SiteHeader />
         <div className="flex-1">{children}</div>
         <SiteFooter />
+        <script defer src="https://www.pvuv.ai/f.js" data-site="7ZRDtRH7" data-api="https://in.pvuv.ai" />
       </body>
     </html>
   );

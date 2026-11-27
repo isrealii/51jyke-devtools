@@ -50,6 +50,19 @@ Consequences to keep in mind:
 - The CDN sees the visitor's IP when the binary is fetched. Query text still never leaves the browser.
 - `next build` / `opennextjs-cloudflare build` no longer warn about oversized assets; if a future dependency reintroduces a large file, `npx wrangler deploy --dry-run` is the fastest check.
 
+## Traffic analytics
+
+`src/app/layout.tsx` carries one hardcoded tag for pvuv.ai, the only traffic measurement on the site:
+
+```html
+<script defer src="https://www.pvuv.ai/f.js" data-site="7ZRDtRH7" data-api="https://in.pvuv.ai"></script>
+```
+
+- Raw `<script>`, not `next/script`, on purpose. `next/script` with `afterInteractive` injects the tag after hydration, so it never shows up in the prerendered HTML; the raw tag is emitted into `<body>` of `/`, `/about` and the 404 page, which is what makes it checkable with view-source.
+- It sits at the end of `<body>`, after `<SiteFooter />`. React renders it in place rather than hoisting it to `<head>`, and serializes `defer` as `defer=""` — same behaviour.
+- `next dev` loads it as well, so localhost page views are counted. Gate it on `process.env.NODE_ENV` if that ever skews the numbers.
+- Privacy surface: the script sees the visitor's IP, User-Agent and page URL. Same class of exposure as the wasm CDN fetch described above; the SQL text still never leaves the browser.
+
 ## SEO and metadata
 
 All social/SEO surface is generated from Next.js file conventions, so there are no static images to maintain:
@@ -58,10 +71,12 @@ All social/SEO surface is generated from Next.js file conventions, so there are 
 - `src/app/opengraph-image.tsx` and `src/app/twitter-image.tsx` both render the card defined in `src/lib/social-image.tsx` (1200×630). Keep that component flexbox-only: the `next/og` renderer (Satori) ignores CSS grid.
 - Social images follow the route segment: `src/app/about/opengraph-image.tsx` and `src/app/about/twitter-image.tsx` reuse the same component with the about copy, because a page-level `openGraph`/`twitter` export does not inherit the root image. Without those files `/about` would ship no `og:image`.
 - `src/app/icon.svg`, `src/app/apple-icon.tsx` (180×180) and the existing `src/app/favicon.ico` are declared again in `src/app/manifest.ts`.
-- `src/app/sitemap.ts` uses a fixed `lastModified` constant, because a bare `new Date()` would make the route dynamic at build time. Bump that date by hand when page content changes.
+- `src/app/sitemap.ts` stamps both URLs with the build time instead of a hand-bumped constant: a date nobody bumps tells Google the page never changed, while a date slightly newer than the content is merely ignored, not penalised. `new Date()` is evaluated once at build time, not per request — the route still prerenders and answers with `x-nextjs-prerender: 1`. The root URL is written without a trailing slash to match the canonical tag and `og:url`; Next resolves metadata URLs through `new URL(...)` and always emits them slash-free, so one spelling covers all three surfaces.
 - `next.config.ts` keeps `cacheComponents` and `partialPrefetching` off. With them enabled, OpenNext on Workers hangs every page request (`The Workers runtime canceled this request because it detected that your Worker's code had hung`) while static assets keep returning 200 — `/` and `/about` answer 500. Do not re-enable until https://github.com/opennextjs/opennextjs-cloudflare/pull/1318 lands.
 - `src/app/robots.ts` allows everything and points at the sitemap; it no longer disallows paths that do not exist.
 - `src/app/not-found.tsx` exports its own `metadata` (Next adds `robots: noindex` to 404s automatically) and links back to the converter and about page.
 - `next.config.ts` sets baseline security headers (`nosniff`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`) on `/:path*`. `Strict-Transport-Security` is added only in production builds.
+- `next.config.ts` overrides `Cache-Control` on `/` and `/about` with `public, max-age=0, must-revalidate`. Left alone, Next stamps prerendered HTML with `s-maxage=31536000`, which would let any shared cache keep serving the previous markup for a year after a redeploy. Cloudflare does not edge-cache Worker responses today (no `cf-cache-status` or `Age` header), so nothing is stale right now — the override is insurance for the day a Cache Rule or another CDN sits in front. Hashed `/_next/static/*` assets keep their immutable header; the override targets the two document routes only.
+- `poweredByHeader: false` drops `x-powered-by: Next.js` from every response.
 
 In `next dev` the generated `og:image` / `twitter:image` URLs point at `http://localhost:3000`. That is expected: Next resolves file-convention social images against a local fallback outside production. Production builds emit `https://51jyke.com/opengraph-image`.
