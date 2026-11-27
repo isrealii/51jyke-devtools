@@ -26,3 +26,18 @@ Tests cover initialization, statement families, dialect pagination, Oracle modes
 ## Routes and deployment
 
 `/` is the converter; `/about` documents its limits. Verify `/`, `/about`, `/robots.txt` and `/sitemap.xml` after deployment, then submit the sitemap to Search Console.
+
+## SEO and metadata
+
+All social/SEO surface is generated from Next.js file conventions, so there are no static images to maintain:
+
+- `src/app/layout.tsx` holds `metadataBase`, the shared title template, `siteDescription`, the `Viewport` export (`themeColor`), and a JSON-LD `@graph` (`Organization` / `WebSite` / `SoftwareApplication`) rendered once from the root layout.
+- `src/app/opengraph-image.tsx` and `src/app/twitter-image.tsx` both render the card defined in `src/lib/social-image.tsx` (1200×630). Keep that component flexbox-only: the `next/og` renderer (Satori) ignores CSS grid.
+- Social images follow the route segment: `src/app/about/opengraph-image.tsx` and `src/app/about/twitter-image.tsx` reuse the same component with the about copy, because a page-level `openGraph`/`twitter` export does not inherit the root image. Without those files `/about` would ship no `og:image`.
+- `src/app/icon.svg`, `src/app/apple-icon.tsx` (180×180) and the existing `src/app/favicon.ico` are declared again in `src/app/manifest.ts`.
+- `src/app/sitemap.ts` uses a fixed `lastModified` constant. A bare `new Date()` breaks prerendering under `cacheComponents`, so bump that date by hand when page content changes.
+- `src/app/robots.ts` allows everything and points at the sitemap; it no longer disallows paths that do not exist.
+- `src/app/not-found.tsx` exports its own `metadata` (Next adds `robots: noindex` to 404s automatically) and links back to the converter and about page.
+- `next.config.ts` sets baseline security headers (`nosniff`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`) on `/:path*`. `Strict-Transport-Security` is added only in production builds.
+
+In `next dev` the generated `og:image` / `twitter:image` URLs point at `http://localhost:3000`. That is expected: Next resolves file-convention social images against a local fallback outside production. Production builds emit `https://51jyke.com/opengraph-image`.

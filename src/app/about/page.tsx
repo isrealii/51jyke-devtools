@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "About 51JYKE DevTools",
+  title: "About",
   description: "Learn the supported SQL dialects, parser boundaries, browser-local processing, warnings, and fallback behavior of 51JYKE DevTools.",
   alternates: { canonical: "/about" },
   openGraph: { type: "website", siteName: "51JYKE DevTools", title: "About 51JYKE DevTools", description: "A free, browser-based SQL dialect converter with clear limits and local processing.", url: "https://51jyke.com/about" },
-  twitter: { card: "summary", title: "About 51JYKE DevTools", description: "A free, browser-based SQL dialect converter with clear limits and local processing." },
+  twitter: { card: "summary_large_image", title: "About 51JYKE DevTools", description: "A free, browser-based SQL dialect converter with clear limits and local processing." },
 };
 
 export default function AboutPage() {
