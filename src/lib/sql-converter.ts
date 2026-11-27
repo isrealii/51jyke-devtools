@@ -1,11 +1,32 @@
-import type { Dialect as E } from "@polyglot-sql/sdk";
-type Engine = typeof import("@polyglot-sql/sdk");
+import type { Dialect as E } from "@polyglot-sql/sdk/manual";
+type Engine = typeof import("@polyglot-sql/sdk/manual");
+// Why "./manual" instead of the default entry: the default browser bundle resolves its 27 MiB
+// polyglot_sql.wasm through `new URL("./polyglot_sql.wasm", import.meta.url)`, so the bundler emits
+// that binary as a static asset. Cloudflare Workers rejects any single asset above 25 MiB, which
+// broke `wrangler deploy`. The "./manual" entry is self-contained and takes an explicit `wasmUrl`,
+// so the binary is fetched from a CDN at runtime and never ships inside the build output.
+// Keep these URLs pinned to the "@polyglot-sql/sdk" version in package.json (0.14.0); bump both
+// together, because a mismatched wasm fails at instantiation, not at build time.
+// unpkg is the fallback for jsdelivr outages, which happen on mainland Chinese networks.
+const wasmUrls = [
+  "https://cdn.jsdelivr.net/npm/@polyglot-sql/sdk@0.14.0/dist/polyglot_sql.wasm",
+  "https://unpkg.com/@polyglot-sql/sdk@0.14.0/dist/polyglot_sql.wasm",
+] as const;
 let enginePromise: Promise<Engine> | undefined;
 let ready: Promise<void> | undefined;
 async function loadEngine(): Promise<Engine> {
   if (typeof window === "undefined" && typeof process === "undefined") throw new Error("SQL engine requires a browser or Node.js runtime.");
-  enginePromise ??= import("@polyglot-sql/sdk");
+  enginePromise ??= import("@polyglot-sql/sdk/manual");
   return enginePromise;
+}
+// Initialisation now depends on the network, so a failed CDN attempt must not be cached for the
+// lifetime of the tab: try every mirror, then surface the last error for the UI to display.
+async function initEngine(engine: Engine): Promise<void> {
+  let cause: unknown;
+  for (const wasmUrl of wasmUrls) {
+    try { await engine.init({ wasmUrl }); return; } catch (error) { cause = error; }
+  }
+  throw cause instanceof Error ? cause : new Error("SQL engine could not load its WebAssembly binary.");
 }
 export const dialects = ["PostgreSQL", "MySQL", "SQL Server", "SQLite", "Oracle"] as const;
 export type Dialect = typeof dialects[number];
@@ -13,7 +34,7 @@ export type OraclePaginationMode = "modern" | "legacy";
 export type ConversionWarning = {severity:"info"|"warning"|"error";code:string;message:string;line?:number;column?:number};
 export type ConversionResult = {status:"converted"|"partial"|"unchanged";sql:string;originalSql:string;warnings:ConversionWarning[];suggestedSql?:string;alternatives?:{label:string;sql:string}[]};
 const map = (E: Engine["Dialect"]): Record<Dialect, Engine["Dialect"][keyof Engine["Dialect"]]> => ({PostgreSQL:E.PostgreSQL,MySQL:E.MySQL,"SQL Server":E.TSQL,SQLite:E.SQLite,Oracle:E.Oracle});
-export function initializeSqlEngine(){ready??=loadEngine().then(({init})=>init());return ready;}
+export function initializeSqlEngine(){ready ??= loadEngine().then(initEngine).catch((error) => { ready = undefined; throw error; });return ready;}
 export const initSqlConverter=initializeSqlEngine;
 export async function convertSql(sql:string,source:Dialect,target:Dialect,mode:OraclePaginationMode="modern"):Promise<ConversionResult>{
  if(!sql.trim())return{status:"unchanged",sql,originalSql:sql,warnings:[]};
