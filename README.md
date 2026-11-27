@@ -17,7 +17,7 @@ npm install
 npx tsc --noEmit
 npx tsc --module commonjs --target es2020 --outDir .test-build src/lib/sql-converter.ts src/lib/sql-converter.test.ts src/types/polyglot-manual.d.ts --esModuleInterop --skipLibCheck
 node --test .test-build/sql-converter.test.js
-npm run build
+npm run build     # plain `next build`; the adapter shells out to this script
 npm run preview   # OpenNext build + local workerd preview
 npm run deploy    # OpenNext build + wrangler deploy
 ```
@@ -28,7 +28,16 @@ Tests cover initialization, statement families, dialect pagination, Oracle modes
 
 `/` is the converter; `/about` documents its limits. Verify `/`, `/about`, `/robots.txt` and `/sitemap.xml` after deployment, then submit the sitemap to Search Console.
 
-Deployment target is Cloudflare Workers via OpenNext. `wrangler.jsonc` and `open-next.config.ts` are committed, so Cloudflare must not re-run `opennextjs-cloudflare migrate` on every build: set the build command to `npx opennextjs-cloudflare build` and the deploy command to `npx wrangler deploy` in the project settings. No incremental cache is configured — every route is prerendered static, so nothing revalidates at runtime; add R2 plus the `WORKER_SELF_REFERENCE` binding only when a route starts using `use cache` or ISR.
+Deployment target is Cloudflare Workers via OpenNext, and the Cloudflare project settings are load-bearing:
+
+| Setting | Value | Why |
+|---|---|---|
+| Build command | `npx opennextjs-cloudflare build` | `wrangler deploy` delegates to `opennextjs-cloudflare deploy` as soon as it sees `next.config.ts` + `open-next.config.ts` + the adapter installed (`wrangler-dist/cli.js:163329`), and that deploy only accepts a `.open-next/` produced by the OpenNext build. With plain `npm run build` the step fails with `Could not find compiled Open Next config, did you run the build command?` |
+| Deploy command | `npx wrangler deploy` | Delegates to the OpenNext deploy, no rebuild |
+
+Do not try to fix this by pointing `package.json`'s `build` script at `opennextjs-cloudflare build`: the adapter invokes `npm run build` itself (`@opennextjs/aws/dist/build/buildNextApp.js`, `buildNextjsApp()`), so that wiring recurses until the process dies.
+
+No incremental cache is configured — every route is prerendered static, so nothing revalidates at runtime; add R2 plus the `WORKER_SELF_REFERENCE` binding only when a route starts using `use cache` or ISR.
 
 ## Engine binary delivery
 
